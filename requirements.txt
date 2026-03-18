@@ -1,0 +1,11 @@
+# Bot de vuelos - dependencias
+# Instalar con:  pip install -r requirements.txt
+
+# python-telegram-bot con soporte de JobQueue (incluye APScheduler)
+python-telegram-bot[job-queue]>=20.7
+
+# Peticiones HTTP a la API de Airlabs
+requests>=2.28.0
+
+# Carga de variables de entorno desde .env
+python-dotenv>=1.0.0
