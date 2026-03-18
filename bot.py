@@ -179,13 +179,58 @@ def _api_get(endpoint: str, params: dict) -> Optional[dict]:
 
 def fetch_flight(code: str) -> Optional[dict]:
     """
-    Consulta el estado en tiempo real de un vuelo por código IATA.
-    Devuelve el dict 'response' de Airlabs, o None si no hay datos.
+    Consulta el estado de un vuelo por código IATA.
+
+    Estrategia:
+      1. /flight  → datos en tiempo real (solo funciona cuando el vuelo está
+                    activo o muy próximo a la salida).
+      2. /schedules → horarios programados (funciona para vuelos futuros).
+                      Devuelve lista; elegimos el más cercano en el tiempo.
     """
-    data = _api_get("flight", {"flight_iata": code.upper()})
+    code = code.upper()
+
+    # ── Intento 1: tiempo real ───────────────────────────────────────────────
+    data = _api_get("flight", {"flight_iata": code})
     if data:
-        return data.get("response")
-    return None
+        flight = data.get("response")
+        if flight:
+            return flight
+
+    # ── Intento 2: schedules (vuelos programados) ────────────────────────────
+    data = _api_get("schedules", {"flight_iata": code})
+    if not data:
+        return None
+
+    results = data.get("response")
+    if not results:
+        return None
+
+    # Puede devolver varios (distintos días). Elegir el más próximo hacia el futuro,
+    # o si no hay ninguno futuro, el más reciente en el pasado.
+    now = datetime.now(timezone.utc)
+    best = None
+    best_delta = None
+
+    for item in results:
+        dep = None
+        for key in ("dep_time_utc", "dep_time", "dep_estimated_utc"):
+            val = item.get(key)
+            if val:
+                try:
+                    dep = datetime.strptime(str(val)[:16], "%Y-%m-%d %H:%M").replace(
+                        tzinfo=timezone.utc
+                    )
+                    break
+                except ValueError:
+                    continue
+        if dep is None:
+            continue
+        delta = abs((dep - now).total_seconds())
+        if best_delta is None or delta < best_delta:
+            best_delta = delta
+            best = item
+
+    return best
 
 
 def parse_dep_utc(f: dict) -> Optional[datetime]:
